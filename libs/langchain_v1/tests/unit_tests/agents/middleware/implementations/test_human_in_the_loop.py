@@ -148,6 +148,7 @@ def test_human_in_the_loop_middleware_single_tool_response() -> None:
         assert result["messages"][1].content == "Custom response message"
         assert result["messages"][1].name == "test_tool"
         assert result["messages"][1].tool_call_id == "1"
+        assert result["messages"][1].status == "success"
 
 
 def test_human_in_the_loop_middleware_multiple_tools_mixed_responses() -> None:
@@ -197,6 +198,7 @@ def test_human_in_the_loop_middleware_multiple_tools_mixed_responses() -> None:
         assert isinstance(tool_message, ToolMessage)
         assert tool_message.content == "User rejected this tool call"
         assert tool_message.name == "get_temperature"
+        assert tool_message.status == "success"
 
 
 def test_human_in_the_loop_middleware_multiple_tools_edit_responses() -> None:
@@ -753,3 +755,33 @@ def test_human_in_the_loop_middleware_preserves_order_with_rejections() -> None:
         assert isinstance(tool_message, ToolMessage)
         assert tool_message.content == "Rejected tool B"
         assert tool_message.tool_call_id == "id_b"
+        assert tool_message.status == "success"
+
+
+def test_human_in_the_loop_middleware_reject_uses_success_status() -> None:
+    """Regression test: rejection ToolMessage must use status='success', not 'error'.
+
+    With status='error', Anthropic models serialize the message as is_error=True,
+    which signals a transient tool failure and causes the LLM to retry the same
+    tool call indefinitely. A rejection is an intentional outcome, not an error.
+    """
+    middleware = HumanInTheLoopMiddleware(
+        interrupt_on={"test_tool": {"allowed_decisions": ["approve", "reject"]}}
+    )
+
+    ai_message = AIMessage(
+        content="I'll help you",
+        tool_calls=[{"name": "test_tool", "args": {"input": "test"}, "id": "1"}],
+    )
+    state = AgentState[Any](messages=[HumanMessage(content="Hello"), ai_message])
+
+    with patch(
+        "langchain.agents.middleware.human_in_the_loop.interrupt",
+        return_value={"decisions": [{"type": "reject"}]},
+    ):
+        result = middleware.after_model(state, Runtime())
+
+    assert result is not None
+    tool_message = result["messages"][1]
+    assert isinstance(tool_message, ToolMessage)
+    assert tool_message.status == "success"

@@ -274,7 +274,7 @@ class HumanInTheLoopMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
                 content=content,
                 name=tool_call["name"],
                 tool_call_id=tool_call["id"],
-                status="error",
+                status="success",
             )
             return tool_call, tool_message
         msg = (
